@@ -2,12 +2,35 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>AR Videosphere</title>
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { 
+      margin: 0; 
+      overflow: hidden; 
+      background: #000;
+    }
+    #startButton {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      padding: 20px 40px;
+      border: none;
+      border-radius: 50px;
+      font-family: Arial, sans-serif;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    #startButton:active {
+      transform: translate(-50%, -50%) scale(0.95);
+    }
     #instructions {
       position: absolute;
       top: 20px;
@@ -19,75 +42,142 @@
       border-radius: 10px;
       font-family: Arial, sans-serif;
       text-align: center;
-      z-index: 1000;
+      z-index: 999;
       max-width: 80%;
+      display: none;
+    }
+    #videoContainer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
+    #cameraFeed {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
     }
   </style>
 </head>
 <body>
+  <button id="startButton">Start AR Experience</button>
   <div id="instructions">Tap on the sphere to enter the video experience</div>
+  <video id="cameraFeed" autoplay playsinline></video>
   
-  <a-scene 
-    embedded 
-    arjs="sourceType: webcam; debugUIEnabled: false; videoTexture: true; sourceWidth: 1280; sourceHeight: 960; displayWidth: 1280; displayHeight: 960;" 
-    vr-mode-ui="enabled: false"
-    renderer="logarithmicDepthBuffer: true; precision: medium;">
-    <!-- Assets -->
-    <a-assets>
-      <img id="sphereTexture" src="https://cdn.aframe.io/360-image-gallery-boilerplate/img/city.jpg" crossorigin="anonymous">
-      <video id="video" 
-        autoplay 
-        loop 
-        muted 
-        playsinline 
-        crossorigin="anonymous"
-        preload="auto"
-        src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4">
-      </video>
-    </a-assets>
+  <div id="videoContainer">
+    <a-scene 
+      embedded 
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false">
+      
+      <!-- Assets -->
+      <a-assets>
+        <img id="sphereTexture" src="https://cdn.aframe.io/360-image-gallery-boilerplate/img/city.jpg" crossorigin="anonymous">
+        <video id="video" 
+          autoplay 
+          loop 
+          muted 
+          playsinline 
+          crossorigin="anonymous"
+          preload="auto"
+          src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4">
+        </video>
+      </a-assets>
 
-    <!-- Camera -->
-    <a-camera 
-      position="0 1.6 0" 
-      look-controls="enabled: false"
-      fov="80"></a-camera>
+      <!-- Camera with device orientation -->
+      <a-camera 
+        position="0 1.6 0" 
+        look-controls="enabled: true; reverseMouseDrag: false"
+        wasd-controls="enabled: false">
+      </a-camera>
 
-    <!-- Initial Sphere with Image Texture -->
-    <a-sphere 
-      id="initialSphere"
-      position="0 1.6 -3"
-      radius="0.5"
-      src="#sphereTexture"
-      class="clickable"
-      animation__hover="property: scale; to: 1.1 1.1 1.1; dur: 200; startEvents: mouseenter"
-      animation__unhover="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave">
-    </a-sphere>
+      <!-- Initial Sphere with Image Texture -->
+      <a-sphere 
+        id="initialSphere"
+        position="0 1.6 -3"
+        radius="0.5"
+        src="#sphereTexture"
+        class="clickable"
+        animation__hover="property: scale; to: 1.1 1.1 1.1; dur: 200; startEvents: mouseenter"
+        animation__unhover="property: scale; to: 1 1 1; dur: 200; startEvents: mouseleave">
+      </a-sphere>
 
-    <!-- Video Sphere (initially hidden) -->
-    <a-videosphere 
-      id="videoSphere"
-      src="#video"
-      visible="false"
-      radius="5000"
-      rotation="0 180 0">
-    </a-videosphere>
+      <!-- Video Sphere (initially hidden) -->
+      <a-videosphere 
+        id="videoSphere"
+        src="#video"
+        visible="false"
+        radius="5000"
+        rotation="0 180 0">
+      </a-videosphere>
 
-    <!-- Cursor for interaction -->
-    <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
-  </a-scene>
+      <!-- Cursor for interaction -->
+      <a-entity cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .clickable"></a-entity>
+    </a-scene>
+  </div>
 
   <script>
+    let cameraStream = null;
+
+    // Start button handler
+    document.getElementById('startButton').addEventListener('click', async function() {
+      const startButton = this;
+      const instructions = document.getElementById('instructions');
+      const cameraFeed = document.getElementById('cameraFeed');
+      
+      try {
+        // Request camera access with specific constraints
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+        
+        // Show camera feed
+        cameraFeed.srcObject = cameraStream;
+        cameraFeed.style.display = 'block';
+        
+        // Request device orientation permission on iOS
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          await DeviceOrientationEvent.requestPermission();
+        }
+        
+        // Hide button, show instructions
+        startButton.style.display = 'none';
+        instructions.style.display = 'block';
+        
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+        alert('Unable to access camera. Please make sure you granted camera permissions.');
+      }
+    });
+
+    // Tap handler component
     AFRAME.registerComponent('tap-handler', {
       init: function() {
         this.el.addEventListener('click', () => {
           const initialSphere = document.querySelector('#initialSphere');
           const videoSphere = document.querySelector('#videoSphere');
           const video = document.querySelector('#video');
-          const instructions = document.querySelector('#instructions');
-          const camera = document.querySelector('a-camera');
+          const instructions = document.getElementById('instructions');
+          const cameraFeed = document.getElementById('cameraFeed');
 
-          // Hide instructions
+          // Hide instructions and camera feed
           instructions.style.display = 'none';
+          cameraFeed.style.display = 'none';
+          
+          // Stop camera stream
+          if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+          }
 
           // Ensure video is ready to play
           video.muted = true;
@@ -119,26 +209,25 @@
             if (playPromise !== undefined) {
               playPromise.catch(error => {
                 console.log('Video play failed:', error);
-                // Try playing again after a short delay
                 setTimeout(() => video.play(), 500);
               });
             }
-            
-            // Enable look controls for immersive experience
-            camera.setAttribute('look-controls', 'enabled: true');
           }, 1000);
         });
       }
     });
 
-    // Add tap handler to initial sphere
-    document.addEventListener('DOMContentLoaded', () => {
-      const initialSphere = document.querySelector('#initialSphere');
-      initialSphere.setAttribute('tap-handler', '');
-      
-      // Preload video
-      const video = document.querySelector('#video');
-      video.load();
+    // Add tap handler to initial sphere when scene loads
+    window.addEventListener('load', () => {
+      const scene = document.querySelector('a-scene');
+      scene.addEventListener('loaded', () => {
+        const initialSphere = document.querySelector('#initialSphere');
+        initialSphere.setAttribute('tap-handler', '');
+        
+        // Preload video
+        const video = document.querySelector('#video');
+        video.load();
+      });
     });
   </script>
 </body>
